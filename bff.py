@@ -14,18 +14,69 @@ scheduleItems = soup.findAll('article', attrs={'class': 'ShowScheduleColumn-item
 
 def convert_24_clock(s):
     am_or_pm = s[-2:].strip()
+
+    # retrieve hour
     initial_time_hour = s[:-2].split(':')[0]
     initial_time_hour = int(initial_time_hour)
-    initial_time_minutes = s[:-2].split(':')[1]
 
     if am_or_pm == 'pm' and initial_time_hour != 12:
         initial_time_hour += 12
-    initial_time_hour = str(initial_time_hour)
+    if am_or_pm == 'am' and initial_time_hour == 12:
+        initial_time_hour = 0
 
-    if initial_time_minutes == '30':
-        return (initial_time_hour + ':30')
-    else:
-        return (initial_time_hour + ':00')
+    # retrieve minutes
+    initial_time_minutes = s[:-2].split(':')[1]
+    initial_time_minutes = int(initial_time_minutes)
+
+    return [initial_time_hour, initial_time_minutes]
+
+
+def get_bff_shows():
+    shows = []
+
+    for item in scheduleItems:
+        show = {}
+        show['station'] = 'bff'
+        deets = item['title']
+
+        # show name
+        show['show'] = deets.split('at')[0].strip()
+        # dj name
+        show['dj'] = item.find('a', attrs={'itemprop': 'author'}).text
+
+        times = deets.split(' at ')[-1].split(',')[0]
+        try:
+            # convert date into a datetime of timezone us/pacific
+            show_date = parse(deets.split(' ')[-1].strip(), timezone='US/Pacific')
+
+            # retrieve full datetime objects for start and end of show
+            [begin_hour, begin_minute] = convert_24_clock(times.split('–')[0])
+            begin_show_date = show_date.replace(hour=begin_hour, minute=begin_minute).shift('utc')
+
+            [end_hour, end_minute] = convert_24_clock(times.split('–')[1])
+            end_show_date = show_date.replace(hour=end_hour, minute=end_minute)
+            if ('pm' in times.split('–')[0] and 'am' in times.split('–')[1]):
+                end_show_date = (end_show_date + timedelta(days=1))
+            end_show_date = end_show_date.shift('utc')
+
+            show['begin_day'] = begin_show_date.naive.strftime('%w')
+            show['begin_hour'] = begin_show_date.naive.hour
+            show['begin_minute'] = begin_show_date.naive.minute
+
+            show['end_day'] = end_show_date.naive.strftime('%w')
+            show['end_hour'] = end_show_date.naive.hour
+            show['end_minute'] = end_show_date.naive.minute
+
+            shows.append(show)
+        except Exception as e:
+            print(f'This show date ({deets}) could not be parsed.')
+
+    print(shows[0])
+    return shows
+
+
+if __name__ == "__main__":
+    get_bff_shows()
 
 
 def add_day(show_time, show_date):
@@ -34,29 +85,3 @@ def add_day(show_time, show_date):
     show_date = show_date.replace(hour=show_hour, minute=show_minute).shift(timezone='UTC').naive.strftime('%w')
     return [show_time, show_date]
     # if start is 'pm' and second is 'am', use tomorrow for end date day
-
-
-for item in scheduleItems:
-    show = {}
-    deets = item['title']
-    show['show'] = deets.split('at')[0].strip()
-    show['dj'] = item.find('a', attrs={'itemprop': 'author'}).text
-    times = deets.split('at')[1].split(',')[0]
-    try:
-        show_date = parse(deets.split(' ')[-1].strip(), timezone='US/Pacific')
-    except Exception as e:
-        print(f'This show date ({deets}) could not be parsed.')
-
-    try:
-        show['start_time'] = convert_24_clock(times.split('–')[0])
-        show['start_time'] = add_day(show['start_time'], show_date)
-
-        show['end_time'] = convert_24_clock(times.split('–')[1])
-        if ('pm' in times.split('–')[0] and 'am' in times.split('–')[1]):
-            show['end_time'] = add_day(show['end_time']), (show_date + timedelta(days=1))
-        else:
-            show['end_time'] = add_day(show['end_time'], (show_date))
-    except Exception as e:
-        print(e)
-
-    print(show)
